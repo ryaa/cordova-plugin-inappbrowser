@@ -1393,7 +1393,12 @@ public class InAppBrowser extends CordovaPlugin {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
-            String newloc = "";
+            // CUSTOM CHANGE/FIX
+            // For any URL opened (including the custom URL schemes used to open native bank apps) which does not start 
+            // with http:// or https://, the plugin adds http:// prefix which broke the URL and caused "Webpage not available" error.
+            // The fix is to avoid adding this http:// prefix. If this causes the problem, another workaround could be to
+            // check if || url.startsWith("wijnspijs:") and pass it along
+            /* String newloc = "";
             if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("file:")) {
                 newloc = url;
             }
@@ -1403,7 +1408,8 @@ public class InAppBrowser extends CordovaPlugin {
                 // it really should be.  Complain loudly about this!!!
                 LOG.e(LOG_TAG, "Possible Uncaught/Unknown URI");
                 newloc = "http://" + url;
-            }
+            } */
+            String newloc = url;
 
             // Update the UI if we haven't already
             if (!newloc.equals(edittext.getText().toString())) {
