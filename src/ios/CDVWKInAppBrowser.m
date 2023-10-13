@@ -18,9 +18,12 @@
  */
 
 #import "CDVWKInAppBrowser.h"
+#import <Cordova/NSDictionary+CordovaPreferences.h>
 
-#if __has_include("CDVWKProcessPoolFactory.h")
-#import "CDVWKProcessPoolFactory.h"
+#if __has_include(<Cordova/CDVWebViewProcessPoolFactory.h>) // Cordova-iOS >=6
+  #import <Cordova/CDVWebViewProcessPoolFactory.h>
+#elif __has_include("CDVWKProcessPoolFactory.h") // Cordova-iOS <6 with WKWebView plugin
+  #import "CDVWKProcessPoolFactory.h"
 #endif
 
 #import <Cordova/CDVPluginResult.h>
@@ -537,22 +540,10 @@ static CDVWKInAppBrowser* instance = nil;
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
     }
     
-    //if is an app store link, let the system handle it, otherwise it fails to load it
-    if ([[ url scheme] isEqualToString:@"itms-appss"] || [[ url scheme] isEqualToString:@"itms-apps"]
-        // CUSTOM CHANGE START (fix to support opening bank native apps)
-        || [[ url scheme] isEqualToString:@"wijnspijs"]
-        || [[ url scheme] isEqualToString:@"nl.abnamro.ideal"]
-        || [[ url scheme] isEqualToString:@"nl-asnbank-ideal"]
-        || [[ url scheme] isEqualToString:@"ideal-ing-nl"]
-        || [[ url scheme] isEqualToString:@"nl.rabobank.ideal"]
-        || [[ url scheme] isEqualToString:@"nl-snsbank-ideal"]
-        || [[ url scheme] isEqualToString:@"nl-regiobank-ideal"]
-        || [[ url scheme] isEqualToString:@"triodosmobilebanking"]
-        || [[ url scheme] isEqualToString:@"bunq"]
-        || [[ url scheme] isEqualToString:@"moneyougonl"]
-        || [[ url scheme] isEqualToString:@"shb-nlpriv"]
-        // CUSTOM CHANGE START (fix to support opening bank native apps)
-        ) {
+    //if is an app store, tel, sms, mailto or geo link or bank native apps that needs to be supported in wijnspisjs consumer mobile app
+    // let the system handle it, otherwise it fails to load it
+    NSArray * allowedSchemes = @[@"itms-appss", @"itms-apps", @"tel", @"sms", @"mailto", @"geo", @"wijnspijs", @"nl.abnamro.ideal", @"nl-asnbank-ideal", @"ideal-ing-nl", @"nl.rabobank.ideal", @"nl-snsbank-ideal", @"nl-regiobank-ideal", @"triodosmobilebanking", @"bunq", @"moneyougonl", @"shb-nlpriv"];
+    if ([allowedSchemes containsObject:[url scheme]]) {
         [theWebView stopLoading];
         [self openInSystem:url];
         shouldStart = NO;
@@ -753,7 +744,9 @@ BOOL isExiting = FALSE;
     }
     configuration.applicationNameForUserAgent = userAgent;
     configuration.userContentController = userContentController;
-#if __has_include("CDVWKProcessPoolFactory.h")
+#if __has_include(<Cordova/CDVWebViewProcessPoolFactory.h>)
+    configuration.processPool = [[CDVWebViewProcessPoolFactory sharedFactory] sharedProcessPool];
+#elif __has_include("CDVWKProcessPoolFactory.h")
     configuration.processPool = [[CDVWKProcessPoolFactory sharedFactory] sharedProcessPool];
 #endif
     [configuration.userContentController addScriptMessageHandler:self name:IAB_BRIDGE_NAME];
@@ -783,6 +776,21 @@ BOOL isExiting = FALSE;
     
 
     self.webView = [[WKWebView alloc] initWithFrame:webViewBounds configuration:configuration];
+
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 160400
+    // With the introduction of iOS 16.4 the webview is no longer inspectable by default.
+    // We'll honor that change for release builds, but will still allow inspection on debug builds by default.
+    // We also introduce an override option, so consumers can influence this decision in their own build.
+    if (@available(iOS 16.4, *)) {
+#ifdef DEBUG
+        BOOL allowWebviewInspectionDefault = YES;
+#else
+        BOOL allowWebviewInspectionDefault = NO;
+#endif
+        self.webView.inspectable = [_settings cordovaBoolSettingForKey:@"InspectableWebview" defaultValue:allowWebviewInspectionDefault];
+    }
+#endif
+
     
     [self.view addSubview:self.webView];
     [self.view sendSubviewToBack:self.webView];
@@ -1081,6 +1089,12 @@ BOOL isExiting = FALSE;
     NSString* statusBarStylePreference = [self settingForKey:@"InAppBrowserStatusBarStyle"];
     if (statusBarStylePreference && [statusBarStylePreference isEqualToString:@"lightcontent"]) {
         return UIStatusBarStyleLightContent;
+    } else if (statusBarStylePreference && [statusBarStylePreference isEqualToString:@"darkcontent"]) {
+        if (@available(iOS 13.0, *)) {
+            return UIStatusBarStyleDarkContent;
+        } else {
+            return UIStatusBarStyleDefault;
+        }
     } else {
         return UIStatusBarStyleDefault;
     }
