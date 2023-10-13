@@ -1228,7 +1228,7 @@ public class InAppBrowser extends CordovaPlugin {
                 } catch (android.content.ActivityNotFoundException e) {
                     LOG.e(LOG_TAG, "Error dialing " + url + ": " + e.toString());
                 }
-            } else if (url.startsWith("geo:") || url.startsWith(WebView.SCHEME_MAILTO) || url.startsWith("market:") || url.startsWith("intent:")) {
+            } else if (url.startsWith("geo:") || url.startsWith(WebView.SCHEME_MAILTO) || url.startsWith("market:")) {
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW);
                     intent.setData(Uri.parse(url));
@@ -1238,6 +1238,47 @@ public class InAppBrowser extends CordovaPlugin {
                     LOG.e(LOG_TAG, "Error with " + url + ": " + e.toString());
                 }
             }
+            // FIX: this is the change to fix the payment bug with using ING bank mobile app to pay
+            // see more details in the ticket here https://trello.com/c/nzEK4Evr/1078-payment-bug
+            else if (url.startsWith("intent:")) {
+              try {
+                Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
+                if (intent.resolveActivity(cordova.getActivity().getPackageManager()) != null) {
+                  cordova.getActivity().startActivity(intent);
+                  override = true;
+                } else {
+                  // try to find fallback url
+                  String fallbackUrl = intent.getStringExtra("browser_fallback_url");
+                  if (fallbackUrl != null) {
+                    webView.loadUrl(fallbackUrl);
+                    override = true;
+                  } else {
+                    // invite to install
+                    Intent marketIntent = new Intent(Intent.ACTION_VIEW).setData(Uri.parse("market://details?id=" + intent.getPackage()));
+                    PackageManager packageManager = cordova.getActivity().getPackageManager();
+                    if (marketIntent.resolveActivity(packageManager) != null) {
+                      cordova.getActivity().startActivity(marketIntent);
+                      override = true;
+                    }
+                  }
+                }
+              } catch (URISyntaxException e) {
+                // not an intent uri
+                LOG.e(LOG_TAG, "Not an intent uri " + url + ": " + e.toString());
+
+                try {
+                  JSONObject obj = new JSONObject();
+                  obj.put("type", LOAD_ERROR_EVENT);
+                  obj.put("url", url);
+                  obj.put("message", "Not an intent uri");
+                  sendUpdate(obj, true, PluginResult.Status.ERROR);
+                } catch (JSONException ex) {
+                  LOG.d(LOG_TAG, "Should never happen");
+                }
+
+              }
+            }
+            // END FIX
             // If sms:5551212?body=This is the message
             else if (url.startsWith("sms:")) {
                 try {
